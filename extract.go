@@ -15,7 +15,11 @@ func extractFile(file io.ReadCloser, dest string) error {
 	if err != nil {
 		return fmt.Errorf("failed to create gzip reader: %w", err)
 	}
-	defer gzr.Close()
+	defer func() {
+		if err := gzr.Close(); err != nil {
+			fmt.Printf("failed to close gzip reader: %v\n", err)
+		}
+	}()
 
 	tr := tar.NewReader(gzr)
 	for {

@@ -1,3 +1,11 @@
+// Package sol provides a simple command-line tool to manage Node.js versions.
+// It allows users to install, remove, and switch between different Node.js versions.
+// The tool creates a directory structure in the user's home directory to store
+// the installed versions and a symlink to the currently active version.
+// The tool is designed to be simple and easy to use, with commands for each
+// operation and clear error messages for invalid inputs.
+// The tool also handles the extraction of downloaded files and ensures that
+// the correct permissions are set for the installed versions.
 package main
 
 import (
@@ -54,7 +62,11 @@ func install(version string) {
 	if err != nil {
 		exit(err.Error())
 	}
-	defer resp.Body.Close()
+	defer func() {
+		if err := resp.Body.Close(); err != nil {
+			fmt.Printf("failed to close response body: %v\n", err)
+		}
+	}()
 
 	if resp.StatusCode != http.StatusOK {
 		exit(fmt.Sprintf("Failed to download file: %s", resp.Status))
@@ -67,7 +79,9 @@ func install(version string) {
 
 	nodeBin := fmt.Sprintf("%s/bin", dest)
 	bin := getHomeBasedPath(".sol", "bin")
-	os.Remove(bin)
+	if err := os.Remove(bin); err != nil && !os.IsNotExist(err) {
+		exit(err.Error())
+	}
 
 	if err := os.Symlink(nodeBin, bin); err != nil {
 		exit(err.Error())
