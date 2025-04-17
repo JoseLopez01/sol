@@ -97,7 +97,7 @@ func remove(version string) {
 
 	bin := getHomeBasedPath(".sol", "bin")
 	symlink, err := os.Readlink(bin)
-	if err != nil {
+	if err != nil && !os.IsNotExist(err) {
 		exit(err.Error())
 	}
 
