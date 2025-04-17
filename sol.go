@@ -30,6 +30,11 @@ func main() {
 }
 
 func install(version string) {
+	if isInstalled(version) {
+		fmt.Printf("Version %s is already installed\n", version)
+		return
+	}
+
 	url := fmt.Sprintf("https://nodejs.org/download/release/v%s/node-v%s-darwin-arm64.tar.gz", version, version)
 	resp, err := http.Get(url)
 	if err != nil {
@@ -63,7 +68,33 @@ func install(version string) {
 }
 
 func remove(version string) {
-	fmt.Printf("Removing version %s\n", version)
+	if !isInstalled(version) {
+		fmt.Printf("Version %s is not installed\n", version)
+		return
+	}
+
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	bin := fmt.Sprintf("%s/.sol/bin", homeDir)
+	symlink, err := os.Readlink(bin)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	dest := fmt.Sprintf("%s/.sol/versions/node-v%s", homeDir, version)
+	nodeBin := fmt.Sprintf("%s/bin", dest)
+	if nodeBin == symlink {
+		if err := os.Remove(bin); err != nil {
+			log.Fatal(err)
+		}
+	}
+
+	if err := os.RemoveAll(dest); err != nil {
+		log.Fatal(err)
+	}
 }
 
 func use(version string) {
@@ -83,4 +114,18 @@ func createOptFolder() {
 	if err = os.MkdirAll("/opt/sol", 0o755); err != nil {
 		panic(err)
 	}
+}
+
+func isInstalled(version string) bool {
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	dest := fmt.Sprintf("%s/.sol/versions/node-v%s", homeDir, version)
+	if _, err := os.Stat(dest); err == nil {
+		return true
+	}
+
+	return false
 }
