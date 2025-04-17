@@ -10,16 +10,14 @@ import (
 	"strings"
 )
 
-func extractFile(src io.ReadCloser, dest string) error {
-	gzr, err := gzip.NewReader(src)
+func extractFile(file io.ReadCloser, dest string) error {
+	gzr, err := gzip.NewReader(file)
 	if err != nil {
 		return fmt.Errorf("failed to create gzip reader: %w", err)
 	}
 	defer gzr.Close()
 
 	tr := tar.NewReader(gzr)
-	tr.Next() // Skip the first header
-
 	for {
 		header, err := tr.Next()
 		if err == io.EOF {
@@ -30,16 +28,19 @@ func extractFile(src io.ReadCloser, dest string) error {
 			return fmt.Errorf("failed to read tar header: %w", err)
 		}
 
-		parts := strings.Split(header.Name, "/")
-		if len(parts) < 2 {
-			return fmt.Errorf("invalid tar header name: %s", header.Name)
+		target, err := getPath(dest, header.Name)
+		if err != nil {
+			return fmt.Errorf("failed to get target path: %w", err)
 		}
 
-		target := filepath.Join(dest, filepath.Join(parts[1:]...))
 		switch header.Typeflag {
 		case tar.TypeDir:
 			if err := os.MkdirAll(target, os.FileMode(header.Mode)); err != nil {
 				return fmt.Errorf("failed to create directory: %w", err)
+			}
+		case tar.TypeSymlink:
+			if err := os.Symlink(header.Linkname, target); err != nil {
+				return fmt.Errorf("failed to create symlink: %w", err)
 			}
 		case tar.TypeReg:
 			if err := os.MkdirAll(filepath.Dir(target), os.ModePerm); err != nil {
@@ -54,19 +55,28 @@ func extractFile(src io.ReadCloser, dest string) error {
 			if _, err := io.Copy(outFile, tr); err != nil {
 				return fmt.Errorf("failed to extract file: %w", err)
 			}
-			outFile.Close()
+
+			if err := outFile.Close(); err != nil {
+				return fmt.Errorf("failed to close file: %w", err)
+			}
 
 			if err := os.Chmod(target, os.FileMode(header.Mode)); err != nil {
 				return fmt.Errorf("failed to set file permissions: %w", err)
 			}
-		case tar.TypeSymlink:
-			if err := os.Symlink(header.Linkname, target); err != nil {
-				return fmt.Errorf("failed to create symlink: %w", err)
-			}
 		default:
-			return fmt.Errorf("unsupported file type: %c", header.Typeflag)
+			return fmt.Errorf("unsupported tar header type: %c", header.Typeflag)
 		}
 	}
 
 	return nil
+}
+
+func getPath(dest, name string) (string, error) {
+	parts := strings.Split(name, "/")
+	if len(parts) < 2 {
+		return "", fmt.Errorf("invalid tar header name: %s", name)
+	}
+
+	target := filepath.Join(dest, filepath.Join(parts[1:]...))
+	return target, nil
 }
