@@ -9,31 +9,30 @@ import (
 
 func main() {
 	if len(os.Args) < 2 {
-		panic("Please provide a command")
+		exit("Please provide a command (install, remove, use, ls)")
 	}
 
 	createOptFolder()
 
 	command := os.Args[1]
-
 	switch command {
 	case "install":
 		if len(os.Args) < 3 {
-			panic("Please provide a version to install")
+			exit("Please provide a version to install")
 		}
 
 		version := os.Args[2]
 		install(version)
 	case "remove":
 		if len(os.Args) < 3 {
-			panic("Please provide a version to remove")
+			exit("Please provide a version to remove")
 		}
 
 		version := os.Args[2]
 		remove(version)
 	case "use":
 		if len(os.Args) < 3 {
-			panic("Please provide a version to use")
+			exit("Please provide a version to use")
 		}
 
 		version := os.Args[2]
@@ -41,43 +40,37 @@ func main() {
 	case "ls":
 		list()
 	default:
-		panic("Unknown command")
+		exit("Unknown command")
 	}
 }
 
 func install(version string) {
 	if isInstalled(version) {
-		fmt.Printf("Version %s is already installed\n", version)
-		return
+		exit(fmt.Sprintf("Version %s is already installed\n", version))
 	}
 
 	url := fmt.Sprintf("https://nodejs.org/download/release/v%s/node-v%s-darwin-arm64.tar.gz", version, version)
 	resp, err := http.Get(url)
 	if err != nil {
-		log.Fatal(err)
+		exit(err.Error())
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		log.Fatal(fmt.Sprintf("Failed to download file: %s", resp.Status))
+		exit(fmt.Sprintf("Failed to download file: %s", resp.Status))
 	}
 
-	homeDir, err := os.UserHomeDir()
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	dest := fmt.Sprintf("%s/.sol/versions/v%s", homeDir, version)
+	dest := getHomeBasedPath(".sol", "versions", fmt.Sprintf("v%s", version))
 	if err := extractFile(resp.Body, dest); err != nil {
-		log.Fatal(err)
+		exit(err.Error())
 	}
 
 	nodeBin := fmt.Sprintf("%s/bin", dest)
-	bin := fmt.Sprintf("%s/.sol/bin", homeDir)
+	bin := getHomeBasedPath(".sol", "bin")
 	os.Remove(bin)
 
 	if err := os.Symlink(nodeBin, bin); err != nil {
-		log.Fatal(err)
+		exit(err.Error())
 	}
 
 	fmt.Printf("Node.js version %s installed successfully\n", version)
@@ -85,68 +78,51 @@ func install(version string) {
 
 func remove(version string) {
 	if !isInstalled(version) {
-		fmt.Printf("Version %s is not installed\n", version)
-		return
+		exit(fmt.Sprintf("Version %s is not installed\n", version))
 	}
 
-	homeDir, err := os.UserHomeDir()
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	bin := fmt.Sprintf("%s/.sol/bin", homeDir)
+	bin := getHomeBasedPath(".sol", "bin")
 	symlink, err := os.Readlink(bin)
 	if err != nil {
-		log.Fatal(err)
+		exit(err.Error())
 	}
 
-	dest := fmt.Sprintf("%s/.sol/versions/v%s", homeDir, version)
+	dest := getHomeBasedPath(".sol", "versions", fmt.Sprintf("v%s", version))
 	nodeBin := fmt.Sprintf("%s/bin", dest)
 	if nodeBin == symlink {
 		if err := os.Remove(bin); err != nil {
-			log.Fatal(err)
+			exit(err.Error())
 		}
 	}
 
 	if err := os.RemoveAll(dest); err != nil {
-		log.Fatal(err)
+		exit(err.Error())
 	}
 }
 
 func use(version string) {
 	if !isInstalled(version) {
-		fmt.Printf("Version %s is not installed\n", version)
-		return
+		exit(fmt.Sprintf("Version %s is not installed\n", version))
 	}
 
-	homeDir, err := os.UserHomeDir()
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	bin := fmt.Sprintf("%s/.sol/bin", homeDir)
-	nodeBin := fmt.Sprintf("%s/.sol/versions/v%s/bin", homeDir, version)
+	bin := getHomeBasedPath(".sol", "bin")
+	nodeBin := getHomeBasedPath(".sol", "versions", fmt.Sprintf("v%s", version))
 	if err := os.Remove(bin); err != nil {
-		log.Fatal(err)
+		exit(err.Error())
 	}
 
 	if err := os.Symlink(nodeBin, bin); err != nil {
-		log.Fatal(err)
+		exit(err.Error())
 	}
 
 	fmt.Printf("Node.js version %s is now in use\n", version)
 }
 
 func list() {
-	homeDir, err := os.UserHomeDir()
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	versionsDir := fmt.Sprintf("%s/.sol/versions", homeDir)
+	versionsDir := getHomeBasedPath(".sol", "versions")
 	entries, err := os.ReadDir(versionsDir)
 	if os.IsNotExist(err) {
-		fmt.Println("No versions installed")
+		exit("No versions installed")
 		return
 	}
 
@@ -155,12 +131,11 @@ func list() {
 	}
 
 	if len(entries) == 0 {
-		fmt.Println("No versions installed")
-		return
+		exit("No versions installed")
 	}
 
 	currentVersion := ""
-	bin := fmt.Sprintf("%s/.sol/bin", homeDir)
+	bin := getHomeBasedPath(".sol", "bin")
 	if target, err := os.Readlink(bin); err == nil {
 		currentVersion = target
 	}
@@ -178,33 +153,4 @@ func list() {
 			fmt.Printf("  %s\n", version)
 		}
 	}
-}
-
-func createOptFolder() {
-	_, err := os.Stat("/opt/sol")
-	if err == nil {
-		return
-	}
-
-	if !os.IsNotExist(err) {
-		panic(err)
-	}
-
-	if err = os.MkdirAll("/opt/sol", 0o755); err != nil {
-		panic(err)
-	}
-}
-
-func isInstalled(version string) bool {
-	homeDir, err := os.UserHomeDir()
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	dest := fmt.Sprintf("%s/.sol/versions/v%s", homeDir, version)
-	if _, err := os.Stat(dest); err == nil {
-		return true
-	}
-
-	return false
 }
